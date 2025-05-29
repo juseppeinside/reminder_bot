@@ -110,9 +110,9 @@ bot.onText(/\/list/, async (msg) => {
     let message = "📋 Ваши активные уведомления:\n\n";
 
     for (const notification of notifications) {
-      message += `🆔 ID: ${notification.id}\n`;
       message += `📝 Сообщение: ${notification.message}\n`;
       message += `🕒 Время: ${notification.times.join(", ")}\n`;
+      message += `🆔 ID: ${notification.id}\n`;
 
       if (notification.type === "daily") {
         message += `📅 Тип: Ежедневное\n`;
