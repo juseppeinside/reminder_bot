@@ -7,6 +7,7 @@ const {
   decrementMonthsLeft,
   cleanupExpiredNotifications,
   deleteNotification,
+  getUserNotifications,
 } = require("./db");
 const config = require("../config");
 
@@ -36,6 +37,9 @@ const initScheduler = (bot) => {
       // Создаем массив ID ежемесячных уведомлений, которые были обработаны в текущем месяце
       const processedMonthlyIds = [];
 
+      // Создаем объект для хранения информации о завершающихся уведомлениях для каждого пользователя
+      const expiringNotifications = {};
+
       // Отправляем уведомления, если текущее время совпадает с запланированным
       for (const notification of notifications) {
         // Проверяем каждое время для уведомления
@@ -53,9 +57,18 @@ const initScheduler = (bot) => {
                   `✅ Отправлено ежедневное уведомление: ${notification.id} пользователю ${notification.user_id}`
                 );
 
-                // Если осталось 1 день, добавляем уведомление в список на удаление
+                // Если осталось 1 день, добавляем уведомление в список на удаление и запоминаем для уведомления
                 if (notification.days_left === 1) {
                   notificationsToDelete.push(notification.id);
+
+                  // Запоминаем уведомление для отправки сообщения о завершении
+                  if (!expiringNotifications[notification.user_id]) {
+                    expiringNotifications[notification.user_id] = [];
+                  }
+                  expiringNotifications[notification.user_id].push({
+                    message: notification.message,
+                    type: "daily",
+                  });
                 }
               } catch (err) {
                 console.error(
@@ -81,9 +94,18 @@ const initScheduler = (bot) => {
                 // Добавляем ID в список обработанных ежемесячных уведомлений
                 processedMonthlyIds.push(notification.id);
 
-                // Если осталось 1 месяц, добавляем уведомление в список на удаление
+                // Если осталось 1 месяц, добавляем уведомление в список на удаление и запоминаем для уведомления
                 if (notification.months_left === 1) {
                   notificationsToDelete.push(notification.id);
+
+                  // Запоминаем уведомление для отправки сообщения о завершении
+                  if (!expiringNotifications[notification.user_id]) {
+                    expiringNotifications[notification.user_id] = [];
+                  }
+                  expiringNotifications[notification.user_id].push({
+                    message: notification.message,
+                    type: "monthly",
+                  });
                 }
               } catch (err) {
                 console.error(
@@ -91,6 +113,31 @@ const initScheduler = (bot) => {
                   err.message
                 );
               }
+            }
+          }
+        }
+      }
+
+      // Отправляем уведомления о завершении срока действия
+      for (const userId in expiringNotifications) {
+        if (expiringNotifications.hasOwnProperty(userId)) {
+          const userExpiredNotifications = expiringNotifications[userId];
+
+          for (const notification of userExpiredNotifications) {
+            try {
+              const typeEmoji = notification.type === "daily" ? "⏰" : "📅";
+              await bot.sendMessage(
+                userId,
+                `${typeEmoji} Уведомление "${notification.message}" подошло к концу 🔚\n\nСоздайте новое уведомление, если хотите продолжать получать эти напоминания.`
+              );
+              console.log(
+                `📢 Отправлено уведомление о завершении для пользователя ${userId}`
+              );
+            } catch (err) {
+              console.error(
+                `❌ Ошибка при отправке уведомления о завершении:`,
+                err.message
+              );
             }
           }
         }
