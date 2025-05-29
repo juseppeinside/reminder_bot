@@ -47,10 +47,10 @@ const initScheduler = (bot) => {
               try {
                 await bot.sendMessage(
                   notification.user_id,
-                  notification.message
+                  `⏰ ${notification.message}`
                 );
                 console.log(
-                  `Отправлено ежедневное уведомление: ${notification.id} пользователю ${notification.user_id}`
+                  `✅ Отправлено ежедневное уведомление: ${notification.id} пользователю ${notification.user_id}`
                 );
 
                 // Если осталось 1 день, добавляем уведомление в список на удаление
@@ -59,7 +59,7 @@ const initScheduler = (bot) => {
                 }
               } catch (err) {
                 console.error(
-                  `Ошибка при отправке уведомления ${notification.id}:`,
+                  `❌ Ошибка при отправке уведомления ${notification.id}:`,
                   err.message
                 );
               }
@@ -72,10 +72,10 @@ const initScheduler = (bot) => {
               try {
                 await bot.sendMessage(
                   notification.user_id,
-                  notification.message
+                  `📅 ${notification.message}`
                 );
                 console.log(
-                  `Отправлено ежемесячное уведомление: ${notification.id} пользователю ${notification.user_id}`
+                  `✅ Отправлено ежемесячное уведомление: ${notification.id} пользователю ${notification.user_id}`
                 );
 
                 // Добавляем ID в список обработанных ежемесячных уведомлений
@@ -87,7 +87,7 @@ const initScheduler = (bot) => {
                 }
               } catch (err) {
                 console.error(
-                  `Ошибка при отправке уведомления ${notification.id}:`,
+                  `❌ Ошибка при отправке уведомления ${notification.id}:`,
                   err.message
                 );
               }
@@ -100,9 +100,12 @@ const initScheduler = (bot) => {
       for (const id of notificationsToDelete) {
         try {
           await deleteNotification(id);
-          console.log(`Удалено уведомление ${id} после последней отправки`);
+          console.log(`🗑️ Удалено уведомление ${id} после последней отправки`);
         } catch (err) {
-          console.error(`Ошибка при удалении уведомления ${id}:`, err.message);
+          console.error(
+            `❌ Ошибка при удалении уведомления ${id}:`,
+            err.message
+          );
         }
       }
 
@@ -110,13 +113,16 @@ const initScheduler = (bot) => {
       if (processedMonthlyIds.length > 0) {
         try {
           const updatedCount = await decrementMonthsLeft(processedMonthlyIds);
-          console.log(`Обновлено ${updatedCount} ежемесячных уведомлений`);
+          console.log(`📊 Обновлено ${updatedCount} ежемесячных уведомлений`);
         } catch (err) {
-          console.error("Ошибка при обновлении ежемесячных уведомлений:", err);
+          console.error(
+            "❌ Ошибка при обновлении ежемесячных уведомлений:",
+            err
+          );
         }
       }
     } catch (err) {
-      console.error("Ошибка при проверке уведомлений:", err);
+      console.error("❌ Ошибка при проверке уведомлений:", err);
     }
   });
 
@@ -125,15 +131,15 @@ const initScheduler = (bot) => {
     "0 0 * * *",
     async () => {
       try {
-        console.log("Обновление оставшихся дней для уведомлений...");
+        console.log("🔄 Обновление оставшихся дней для уведомлений...");
         const updatedCount = await decrementDaysLeft();
-        console.log(`Обновлено ${updatedCount} ежедневных уведомлений`);
+        console.log(`📊 Обновлено ${updatedCount} ежедневных уведомлений`);
 
         // Удаление истекших уведомлений
         const deletedCount = await cleanupExpiredNotifications();
-        console.log(`Удалено ${deletedCount} истекших уведомлений`);
+        console.log(`🗑️ Удалено ${deletedCount} истекших уведомлений`);
       } catch (err) {
-        console.error("Ошибка при обновлении оставшихся дней:", err);
+        console.error("❌ Ошибка при обновлении оставшихся дней:", err);
       }
     },
     {
@@ -141,7 +147,7 @@ const initScheduler = (bot) => {
     }
   );
 
-  console.log("Планировщик уведомлений запущен");
+  console.log("🚀 Планировщик уведомлений запущен");
 };
 
 module.exports = { initScheduler };
