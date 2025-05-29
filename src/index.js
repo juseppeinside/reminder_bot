@@ -199,7 +199,7 @@ bot.onText(/\/month.*/, async (msg) => {
     );
 
     // Отправляем подтверждение
-    await bot.sendMessage(chatId, `✅ Принято и ${id}`);
+    await bot.sendMessage(chatId, `✅ Принято`);
   } catch (err) {
     console.error("Ошибка при создании ежемесячного уведомления:", err);
     await bot.sendMessage(
@@ -237,7 +237,7 @@ bot.on("message", async (msg) => {
     await addNotification(id, chatId, message, times, days);
 
     // Отправляем подтверждение
-    await bot.sendMessage(chatId, `✅ Принято и ${id}`);
+    await bot.sendMessage(chatId, `✅ Принято`);
   } catch (err) {
     console.error("Ошибка при создании уведомления:", err);
     await bot.sendMessage(
