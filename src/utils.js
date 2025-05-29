@@ -92,6 +92,7 @@ const parseMessage = (text) => {
         times: validTimes,
         days,
         id: uuidv4(),
+        type: "daily", // Тип уведомления - ежедневное
       },
     };
   } catch (err) {
@@ -99,6 +100,120 @@ const parseMessage = (text) => {
     return {
       success: false,
       error: "Произошла ошибка при обработке сообщения",
+    };
+  }
+};
+
+// Парсинг команды /month для ежемесячных уведомлений
+const parseMonthCommand = (text) => {
+  try {
+    // Формат: /month "Текст" "12:00,16:00" 5 12 или /month «Текст» «12:00,16:00» 5 12
+    const regexWithQuotes =
+      /^\/month\s+["""«]([^"""«»]+)["""»]\s+["""«]([^"""«»]+)["""»]\s+(\d+|infinity)\s+(\d+)$/i;
+
+    // Формат: /month "Текст" 12:00 5 12 или /month «Текст» 12:00 5 12
+    const regexWithoutTimeQuotes =
+      /^\/month\s+["""«]([^"""«»]+)["""»]\s+([0-9]{1,2}:[0-9]{2})\s+(\d+|infinity)\s+(\d+)$/i;
+
+    let match = text.match(regexWithQuotes);
+    let isTimeInQuotes = true;
+
+    if (!match) {
+      match = text.match(regexWithoutTimeQuotes);
+      isTimeInQuotes = false;
+
+      if (!match) {
+        return {
+          success: false,
+          error:
+            'Неверный формат команды. Используйте одну из форм:\n1. /month "Текст сообщения" "ЧЧ:ММ,ЧЧ:ММ" КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА\n2. /month «Текст сообщения» «ЧЧ:ММ,ЧЧ:ММ» КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА\n3. /month "Текст сообщения" ЧЧ:ММ КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА\n4. /month «Текст сообщения» ЧЧ:ММ КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА\n\nВместо КОЛ-ВО_МЕСЯЦЕВ можно указать "infinity" для бесконечной отправки.',
+        };
+      }
+    }
+
+    const [, message, timeString, monthsStr, dayOfMonthStr] = match;
+
+    // Проверка дня месяца
+    const dayOfMonth = parseInt(dayOfMonthStr, 10);
+    if (isNaN(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 28) {
+      return {
+        success: false,
+        error: "День месяца должен быть числом от 1 до 28",
+      };
+    }
+
+    // Проверка на infinity или числовое значение для количества месяцев
+    let months;
+    if (monthsStr.toLowerCase() === "infinity") {
+      months = 36500 / 30; // Примерно 100 лет - условно бесконечно
+    } else {
+      months = parseInt(monthsStr, 10);
+
+      if (isNaN(months) || months <= 0) {
+        return {
+          success: false,
+          error:
+            "Количество месяцев должно быть положительным числом или 'infinity'",
+        };
+      }
+    }
+
+    // Парсинг времени в зависимости от формата
+    let times;
+    if (isTimeInQuotes) {
+      times = timeString.split(",").map((time) => time.trim());
+    } else {
+      times = [timeString.trim()];
+    }
+
+    const validTimes = [];
+    const invalidTimes = [];
+
+    for (const time of times) {
+      const timeRegex = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
+      const timeMatch = time.match(timeRegex);
+
+      if (timeMatch) {
+        const hours = timeMatch[1].padStart(2, "0");
+        const minutes = timeMatch[2];
+        validTimes.push(`${hours}:${minutes}`);
+      } else {
+        invalidTimes.push(time);
+      }
+    }
+
+    if (invalidTimes.length > 0) {
+      return {
+        success: false,
+        error: `Неверный формат времени: ${invalidTimes.join(
+          ", "
+        )}. Используйте формат ЧЧ:ММ`,
+      };
+    }
+
+    if (validTimes.length === 0) {
+      return {
+        success: false,
+        error: "Необходимо указать хотя бы одно время для уведомления",
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        message,
+        times: validTimes,
+        months,
+        dayOfMonth,
+        id: uuidv4(),
+        type: "monthly", // Тип уведомления - ежемесячное
+      },
+    };
+  } catch (err) {
+    console.error("Ошибка при парсинге команды /month:", err);
+    return {
+      success: false,
+      error: "Произошла ошибка при обработке команды",
     };
   }
 };
@@ -132,5 +247,6 @@ const parseDeleteCommand = (text) => {
 
 module.exports = {
   parseMessage,
+  parseMonthCommand,
   parseDeleteCommand,
 };
