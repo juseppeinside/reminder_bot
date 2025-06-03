@@ -4,6 +4,7 @@ const {
   parseMessage,
   parseMonthCommand,
   parseDeleteCommand,
+  parseAiCommand,
 } = require("./utils");
 const {
   addNotification,
@@ -13,6 +14,8 @@ const {
 } = require("./db");
 const { initScheduler } = require("./scheduler");
 const config = require("../config");
+const axios = require("axios");
+const { v4: uuidv4 } = require("uuid");
 
 // Инициализация бота
 const bot = new TelegramBot(config.TELEGRAM_BOT_TOKEN, { polling: true });
@@ -24,6 +27,87 @@ bot.on("polling_error", (error) => {
 
 // Запуск планировщика
 initScheduler(bot);
+
+// Обработка команды /ai
+bot.onText(/\/ai(.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  const result = parseAiCommand(text);
+
+  if (!result.success) {
+    await bot.sendMessage(chatId, "❌ " + result.error);
+    return;
+  }
+
+  try {
+    // Получение токена GigaChat
+    const clientId = config.GIGACHAT_CLIENT_ID;
+    const clientSecret = config.GIGACHAT_CLIENT_SECRET;
+
+    // Формируем данные в формате x-www-form-urlencoded
+    const formData = new URLSearchParams();
+    formData.append("scope", config.GIGACHAT_SCOPE || "GIGACHAT_API_PERS");
+
+    // Генерируем уникальный идентификатор запроса
+    const rqUID = uuidv4();
+
+    const authResponse = await axios({
+      method: "post",
+      url: "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        RqUID: rqUID,
+        Authorization: `Basic ${Buffer.from(
+          clientId + ":" + clientSecret
+        ).toString("base64")}`,
+      },
+      data: formData,
+      httpsAgent: new (require("https").Agent)({
+        rejectUnauthorized: false, // Для обхода проблемы с самоподписанным сертификатом
+      }),
+    });
+
+    const accessToken = authResponse.data.access_token;
+
+    // Отправка запроса к GigaChat API
+    const chatResponse = await axios({
+      method: "post",
+      url: "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      data: {
+        model: "GigaChat",
+        messages: [
+          {
+            role: "user",
+            content: result.data.message,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      },
+      httpsAgent: new (require("https").Agent)({
+        rejectUnauthorized: false, // Для обхода проблемы с самоподписанным сертификатом
+      }),
+    });
+
+    const aiResponse = chatResponse.data.choices[0].message.content;
+    await bot.sendMessage(chatId, aiResponse);
+  } catch (err) {
+    console.error("Ошибка при обращении к GigaChat API:", err.message);
+    if (err.response) {
+      console.error("Ответ сервера:", err.response.data);
+    }
+    await bot.sendMessage(
+      chatId,
+      "❌ Произошла ошибка при получении ответа от ИИ ассистента"
+    );
+  }
+});
 
 // Обработка команды /start
 bot.onText(/\/start/, async (msg) => {

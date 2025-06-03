@@ -245,8 +245,42 @@ const parseDeleteCommand = (text) => {
   }
 };
 
+/**
+ * Парсит команду /ai
+ * @param {string} text - Текст команды
+ * @returns {object} - Результат парсинга
+ */
+const parseAiCommand = (text) => {
+  const aiCommandRegex = /\/ai\s+(.+)/;
+  const match = text.match(aiCommandRegex);
+
+  if (!match) {
+    return {
+      success: false,
+      error: "Неверный формат команды. Пример: /ai текст сообщения",
+    };
+  }
+
+  const message = match[1].trim();
+
+  if (!message) {
+    return {
+      success: false,
+      error: "Текст сообщения не может быть пустым",
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      message,
+    },
+  };
+};
+
 module.exports = {
   parseMessage,
   parseMonthCommand,
   parseDeleteCommand,
+  parseAiCommand,
 };
