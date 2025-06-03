@@ -80,7 +80,7 @@ bot.onText(/\/ai(.+)/, async (msg, match) => {
         Authorization: `Bearer ${accessToken}`,
       },
       data: {
-        model: "GigaChat-2", // Обновлено до GigaChat-2
+        model: "GigaChat", // Первая версия GigaChat
         messages: [
           {
             role: "system",

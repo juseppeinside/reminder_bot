@@ -69,7 +69,7 @@ async function testGigaChatAuth() {
         Authorization: `Bearer ${authResponse.data.access_token}`,
       },
       data: {
-        model: "GigaChat-2", // Используем GigaChat-2
+        model: "GigaChat", // Используем первую версию GigaChat
         messages: [
           {
             role: "system",
