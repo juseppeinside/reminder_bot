@@ -71,7 +71,7 @@ bot.onText(/\/ai(.+)/, async (msg, match) => {
 
     const accessToken = authResponse.data.access_token;
 
-    // Отправка запроса к GigaChat API
+    // Отправка запроса к GigaChat API с использованием GigaChat-2
     const chatResponse = await axios({
       method: "post",
       url: "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
@@ -80,15 +80,35 @@ bot.onText(/\/ai(.+)/, async (msg, match) => {
         Authorization: `Bearer ${accessToken}`,
       },
       data: {
-        model: "GigaChat",
+        model: "GigaChat-2", // Обновлено до GigaChat-2
         messages: [
+          {
+            role: "system",
+            content: `Ты АИ ассистент для приложения для напоминаний, от которого в ответ я должен получать только ответ в формате 
+"/message [Название события] [Время напоминания]"
+
+Правила:
+1. Извлекай из текста краткое название события (3-5 слов). Если событие указано в кавычках, используй их содержимое.
+2. Определи время события и вычти из него указанный интервал напоминания (например, «за 30 минут» или «за час»).
+3. Форматируй время в 24-часовом формате ЧЧ:ММ.
+4. Если не хватает данных для формирования команды, ответь: Ошибка: укажите событие и время.
+5. Запрещено добавлять любые пояснения, эмодзи или текст вне указанного формата.
+
+Пример:
+Вход: «Завтра созвон с Михалычем в 12, напомни за 30 минут до начала»
+Выход: /message [Созвон с Михалычем] [11:30]`,
+          },
           {
             role: "user",
             content: result.data.message,
           },
         ],
         temperature: 0.7,
-        max_tokens: 1000,
+        max_tokens: 1500,
+        // Добавляем новые параметры GigaChat 2.0
+        n: 1,
+        stream: false,
+        top_p: 0.95,
       },
       httpsAgent: new (require("https").Agent)({
         rejectUnauthorized: false, // Для обхода проблемы с самоподписанным сертификатом

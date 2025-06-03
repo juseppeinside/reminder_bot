@@ -56,8 +56,10 @@ async function testGigaChatAuth() {
     // Выводим результат
     console.log("Успешно получен токен:", authResponse.data);
 
-    // Теперь проверим запрос к API
-    console.log("Отправляю тестовый запрос к GigaChat API...");
+    // Теперь проверим запрос к API GigaChat 2.0 Lite с форматированным ответом
+    console.log(
+      "Отправляю тестовый запрос к GigaChat 2.0 Lite API с системным сообщением..."
+    );
 
     const chatResponse = await axios({
       method: "post",
@@ -67,23 +69,59 @@ async function testGigaChatAuth() {
         Authorization: `Bearer ${authResponse.data.access_token}`,
       },
       data: {
-        model: "GigaChat",
+        model: "GigaChat-2", // Используем GigaChat-2
         messages: [
           {
+            role: "system",
+            content: `Ты АИ ассистент для приложения для напоминаний, от которого в ответ я должен получать только ответ в формате 
+"/message [Название события] [Время напоминания]"
+
+Правила:
+1. Извлекай из текста краткое название события (3-5 слов). Если событие указано в кавычках, используй их содержимое.
+2. Определи время события и вычти из него указанный интервал напоминания (например, «за 30 минут» или «за час»).
+3. Форматируй время в 24-часовом формате ЧЧ:ММ.
+4. Если не хватает данных для формирования команды, ответь: Ошибка: укажите событие и время.
+5. Запрещено добавлять любые пояснения, эмодзи или текст вне указанного формата.
+
+Пример:
+Вход: «Завтра созвон с Михалычем в 12, напомни за 30 минут до начала»
+Выход: /message [Созвон с Михалычем] [11:30]`,
+          },
+          {
             role: "user",
-            content: "Привет! Как дела?",
+            content: "Завтра запись к проктологу в 12:00 напомни за час",
           },
         ],
         temperature: 0.7,
-        max_tokens: 100,
+        max_tokens: 1500,
+        n: 1,
+        stream: false,
+        top_p: 0.95,
       },
       httpsAgent: new https.Agent({
         rejectUnauthorized: false,
       }),
     });
 
-    console.log("Успешно получен ответ от GigaChat API!");
+    console.log("Успешно получен ответ от GigaChat 2.0 Lite API!");
     console.log("Ответ:", chatResponse.data.choices[0].message.content);
+
+    // Получение списка доступных моделей
+    console.log("Получаю список доступных моделей...");
+
+    const modelsResponse = await axios({
+      method: "get",
+      url: "https://gigachat.devices.sberbank.ru/api/v1/models",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${authResponse.data.access_token}`,
+      },
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false,
+      }),
+    });
+
+    console.log("Доступные модели:", modelsResponse.data);
   } catch (error) {
     console.error("Ошибка при тестировании GigaChat API:");
 
