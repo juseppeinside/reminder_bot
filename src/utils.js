@@ -157,7 +157,8 @@ const parseDeleteCommand = (text) => {
 // Парсинг команды отправки уведомления вида: /notification "Текст сообщения"
 const parseNotificationCommand = (text) => {
   try {
-    const regex = /^\/notification\s+["«]([^"»]+)["»]$/i;
+    // Регулярное выражение, которое поддерживает многострочный текст и смайлики
+    const regex = /^\/notification\s+["«]([^"»][\s\S]*?)["»]$/i;
     const match = text.match(regex);
 
     if (!match) {
