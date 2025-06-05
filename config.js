@@ -7,4 +7,5 @@ module.exports = {
   TIMEZONE: "Europe/Moscow", // UTC+3
   GIGACHAT_API_KEY:
     process.env.GIGACHAT_API_KEY || "your_gigachat_api_key_here",
+  ADMIN_USER_ID: process.env.ADMIN_USER_ID || "", // ID администратора
 };

@@ -154,7 +154,35 @@ const parseDeleteCommand = (text) => {
   }
 };
 
+// Парсинг команды отправки уведомления вида: /notification "Текст сообщения"
+const parseNotificationCommand = (text) => {
+  try {
+    const regex = /^\/notification\s+["«]([^"»]+)["»]$/i;
+    const match = text.match(regex);
+
+    if (!match) {
+      return {
+        success: false,
+        error:
+          'Неверный формат команды. Используйте: /notification "Текст сообщения"',
+      };
+    }
+
+    return {
+      success: true,
+      message: match[1],
+    };
+  } catch (err) {
+    console.error("Ошибка при парсинге команды отправки уведомления:", err);
+    return {
+      success: false,
+      error: "Произошла ошибка при обработке команды",
+    };
+  }
+};
+
 module.exports = {
   parseMessage,
   parseDeleteCommand,
+  parseNotificationCommand,
 };

@@ -62,9 +62,34 @@ const tryFixAIResponse = (aiResponse, originalText) => {
         extractedTime = `${extractedTime}:00`;
       }
 
+      // Очищаем текст от лишних слов
+      let cleanedMessage = aiResponse.trim();
+
+      // Проверяем, если текст слишком длинный или содержит предлоги
+      const stopWords = [
+        "в",
+        "через",
+        "завтра",
+        "сегодня",
+        "ежедневно",
+        "каждый",
+      ];
+
+      // Если текст содержит стоп-слова, делим по ним и берем только первую часть
+      for (const word of stopWords) {
+        if (cleanedMessage.toLowerCase().includes(` ${word} `)) {
+          cleanedMessage = cleanedMessage.split(` ${word} `)[0].trim();
+        }
+      }
+
+      // Если сообщение все еще длинное, ограничиваем до 2-3 слов
+      if (cleanedMessage.split(/\s+/).length > 3) {
+        cleanedMessage = cleanedMessage.split(/\s+/).slice(0, 2).join(" ");
+      }
+
       // Формируем ответ с учетом ежедневного повторения
       const repetition = isDaily ? "infinity" : "1";
-      const formattedResponse = `"${aiResponse.trim()}" "${extractedTime}" ${repetition}`;
+      const formattedResponse = `"${cleanedMessage}" "${extractedTime}" ${repetition}`;
       console.log("Исправленный формат (простой текст):", formattedResponse);
       return parseMessage(formattedResponse);
     }
@@ -88,9 +113,35 @@ const tryFixAIResponse = (aiResponse, originalText) => {
     if (originalText.toLowerCase().includes(verb)) {
       const verbIndex = originalText.toLowerCase().indexOf(verb);
       const restOfText = originalText.substring(verbIndex);
-      // Ограничиваем до 3-х слов или до первого предлога/союза
-      const words = restOfText.split(/\s+/).slice(0, 5);
-      extractedAction = words.join(" ");
+
+      // Берем только до 2-х слов и избегаем включения временных указателей
+      const wordsArray = restOfText.split(/\s+/);
+      const stopWords = [
+        "в",
+        "через",
+        "завтра",
+        "сегодня",
+        "вечером",
+        "утром",
+        "днем",
+      ];
+
+      let actionWords = [];
+
+      // Берем первые 1-2 слова, но останавливаемся на стоп-словах
+      for (let i = 0; i < Math.min(2, wordsArray.length); i++) {
+        if (stopWords.includes(wordsArray[i].toLowerCase())) {
+          break;
+        }
+        actionWords.push(wordsArray[i]);
+      }
+
+      extractedAction = actionWords.join(" ");
+
+      // Если действие пустое, берем только глагол
+      if (!extractedAction.trim()) {
+        extractedAction = verb;
+      }
 
       // Прерываем поиск после нахождения первого глагола
       break;

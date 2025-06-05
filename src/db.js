@@ -413,6 +413,20 @@ const cleanupExpiredNotifications = () => {
   });
 };
 
+// Получить все уникальные ID пользователей
+const getAllUsers = () => {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT DISTINCT user_id FROM notifications`, (err, rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        const userIds = rows.map((row) => row.user_id);
+        resolve(userIds);
+      }
+    });
+  });
+};
+
 module.exports = {
   db,
   addNotification,
@@ -423,4 +437,5 @@ module.exports = {
   decrementDaysLeft,
   decrementMonthsLeft,
   cleanupExpiredNotifications,
+  getAllUsers,
 };

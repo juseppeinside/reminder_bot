@@ -80,35 +80,57 @@ const extractEventName = (
     "меня",
   ];
 
-  // Сначала проверяем на наличие конкретного действия в конце фразы
-  const actionAtEndPattern = /\s+([\wа-яА-Я\s]+)$/i;
-  const actionMatch = text.match(
-    new RegExp(`в\\s+\\d{1,2}:\\d{2}\\s+(.*?)$`, "i")
-  );
-
-  if (actionMatch && actionMatch[1] && actionMatch[1].length > 5) {
-    return actionMatch[1].trim();
-  }
+  // Список стоп-слов, которые обозначают конец именной части
+  const stopWords = [
+    "в",
+    "через",
+    "завтра",
+    "сегодня",
+    "каждый",
+    "каждую",
+    "в течение",
+  ];
 
   // Проверяем фразы типа "посещать тренировку", "выпить воды", "принять таблетки"
   const actionVerbs = [
     "посещать",
     "выпить",
+    "попей",
+    "попить",
     "принять",
     "сделать",
     "позвонить",
     "проверить",
     "помыть",
   ];
+
   for (const verb of actionVerbs) {
     const verbIndex = text.toLowerCase().indexOf(verb);
     if (verbIndex !== -1) {
-      // Берем всё от глагола до конца строки
-      return text.substring(verbIndex).trim();
+      // Берем текст от глагола
+      const restOfText = text.substring(verbIndex);
+      const words = restOfText.split(/\s+/);
+
+      // Берем максимум 2-3 слова, но останавливаемся на стоп-словах
+      let actionWords = [];
+
+      for (let i = 0; i < Math.min(3, words.length); i++) {
+        if (stopWords.includes(words[i].toLowerCase())) {
+          break;
+        }
+        actionWords.push(words[i]);
+      }
+
+      if (actionWords.length > 0) {
+        return actionWords.join(" ");
+      }
+
+      // Если список пустой, используем только глагол
+      return verb;
     }
   }
 
-  // Если не нашли ничего по шаблонам выше, используем общий алгоритм
+  // Если не нашли ничего по шаблонам выше, используем упрощенный алгоритм
   const words = text.split(/\s+/);
   const filteredWords = words.filter((w) => {
     const wLower = w.toLowerCase();
@@ -120,9 +142,9 @@ const extractEventName = (
     );
   });
 
-  // Если после фильтрации остались значимые слова, используем их
+  // Берем только первые 2-3 значимых слова
   if (filteredWords.length > 0) {
-    return filteredWords.join(" ");
+    return filteredWords.slice(0, 3).join(" ");
   }
 
   // Если ничего не нашли, возвращаем общее название
