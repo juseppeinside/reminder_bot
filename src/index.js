@@ -22,6 +22,7 @@ const {
   NOTIFICATION_DELETION_ERROR,
   INSUFFICIENT_PERMISSIONS,
   NOTIFICATION_SENT,
+  USERS_LIST_ERROR,
 } = require("./constants/botMessages");
 const { formatDateForDisplay, dayNumberToName } = require("./utils/dateTime");
 
@@ -40,6 +41,31 @@ initScheduler(bot);
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   await bot.sendMessage(chatId, WELCOME_MESSAGE);
+});
+
+// Обработка команды /users
+bot.onText(/\/users/, async (msg) => {
+  const chatId = msg.chat.id;
+
+  // Проверка на права администратора
+  if (
+    config.ADMIN_USER_ID &&
+    chatId.toString() !== config.ADMIN_USER_ID.toString()
+  ) {
+    await bot.sendMessage(chatId, INSUFFICIENT_PERMISSIONS);
+    return;
+  }
+
+  try {
+    const users = await getAllUsers();
+    await bot.sendMessage(
+      chatId,
+      `📊 Всего зарегистрировано пользователей: ${users.length}`
+    );
+  } catch (err) {
+    console.error("Ошибка при получении списка пользователей:", err);
+    await bot.sendMessage(chatId, USERS_LIST_ERROR);
+  }
 });
 
 // Обработка команды /help
@@ -177,9 +203,9 @@ bot.onText(/\/delete (.+)/, async (msg, match) => {
 });
 
 // Обработка команды отправки уведомления всем пользователям
-bot.onText(/\/notification (.+)/, async (msg, match) => {
+bot.onText(/\/notification[\s\S]*/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const text = match[0];
+  const text = msg.text; // Используем полный текст сообщения вместо match[0]
 
   // Проверка на права администратора
   if (
@@ -204,12 +230,6 @@ bot.onText(/\/notification (.+)/, async (msg, match) => {
     // Функция задержки
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    // Информируем об общем количестве получателей
-    await bot.sendMessage(
-      chatId,
-      `🚀 Начинаю отправку сообщения ${users.length} пользователям...`
-    );
-
     // Разбиваем пользователей на группы по 10 человек
     const batchSize = 10;
     let successCount = 0;
@@ -221,16 +241,23 @@ bot.onText(/\/notification (.+)/, async (msg, match) => {
       // Отправляем сообщения пакетно
       const sendPromises = batch.map(async (userId) => {
         try {
-          await bot.sendMessage(userId, result.message);
+          await bot.sendMessage(userId, result.message, { parse_mode: "HTML" });
           successCount++;
           return true;
         } catch (err) {
-          console.error(
-            `Ошибка при отправке уведомления пользователю ${userId}:`,
-            err
-          );
-          errorCount++;
-          return false;
+          // Если не сработало с HTML, пробуем без форматирования
+          try {
+            await bot.sendMessage(userId, result.message);
+            successCount++;
+            return true;
+          } catch (secondErr) {
+            console.error(
+              `Ошибка при отправке уведомления пользователю ${userId}:`,
+              secondErr
+            );
+            errorCount++;
+            return false;
+          }
         }
       });
 
@@ -254,10 +281,7 @@ bot.onText(/\/notification (.+)/, async (msg, match) => {
     }
 
     // Отправляем итоговый отчет
-    await bot.sendMessage(
-      chatId,
-      `${NOTIFICATION_SENT}\n✅ Успешно отправлено: ${successCount}\n❌ Ошибок: ${errorCount}`
-    );
+    await bot.sendMessage(chatId, `${NOTIFICATION_SENT}`);
   } catch (err) {
     console.error("Ошибка при отправке уведомления всем пользователям:", err);
     await bot.sendMessage(
