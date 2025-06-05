@@ -1,45 +1,191 @@
 const sqlite3 = require("sqlite3").verbose();
 const config = require("../config");
 const path = require("path");
+const fs = require("fs");
 
 const dbPath = path.resolve(config.DB_PATH);
+
+// Функция для миграции базы данных
+const migrateDatabase = () => {
+  return new Promise((resolve, reject) => {
+    console.log("Проверка и миграция базы данных...");
+
+    // Подключаемся к базе данных
+    const db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+        console.error("Ошибка при подключении к базе данных:", err.message);
+        reject(err);
+        return;
+      }
+
+      db.serialize(() => {
+        // Создаем таблицу, если она не существует
+        db.run(
+          `CREATE TABLE IF NOT EXISTS notifications (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            times TEXT NOT NULL,
+            days_left INTEGER,
+            type TEXT NOT NULL DEFAULT 'daily',
+            day_of_month INTEGER,
+            months_left INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )`,
+          (err) => {
+            if (err) {
+              console.error("Ошибка при создании таблицы:", err.message);
+              reject(err);
+              return;
+            }
+
+            // Проверяем, существует ли столбец days_of_week
+            db.all("PRAGMA table_info(notifications)", (err, rows) => {
+              if (err) {
+                console.error(
+                  "Ошибка при получении информации о таблице:",
+                  err.message
+                );
+                reject(err);
+                return;
+              }
+
+              // Проверяем наличие необходимых столбцов
+              let hasDaysOfWeek = false;
+              let hasTargetDate = false;
+
+              for (const row of rows) {
+                if (row.name === "days_of_week") {
+                  hasDaysOfWeek = true;
+                }
+                if (row.name === "target_date") {
+                  hasTargetDate = true;
+                }
+              }
+
+              // Добавляем необходимые столбцы, если их нет
+              const promises = [];
+
+              // Если столбца days_of_week нет, добавляем его
+              if (!hasDaysOfWeek) {
+                promises.push(
+                  new Promise((resolveColumn, rejectColumn) => {
+                    console.log(
+                      "Добавление столбца days_of_week в таблицу notifications..."
+                    );
+                    db.run(
+                      "ALTER TABLE notifications ADD COLUMN days_of_week TEXT DEFAULT '[]'",
+                      (err) => {
+                        if (err) {
+                          console.error(
+                            "Ошибка при добавлении столбца days_of_week:",
+                            err.message
+                          );
+                          rejectColumn(err);
+                          return;
+                        }
+                        console.log(
+                          "Столбец days_of_week успешно добавлен в таблицу notifications"
+                        );
+                        resolveColumn();
+                      }
+                    );
+                  })
+                );
+              }
+
+              // Если столбца target_date нет, добавляем его
+              if (!hasTargetDate) {
+                promises.push(
+                  new Promise((resolveColumn, rejectColumn) => {
+                    console.log(
+                      "Добавление столбца target_date в таблицу notifications..."
+                    );
+                    db.run(
+                      "ALTER TABLE notifications ADD COLUMN target_date TEXT",
+                      (err) => {
+                        if (err) {
+                          console.error(
+                            "Ошибка при добавлении столбца target_date:",
+                            err.message
+                          );
+                          rejectColumn(err);
+                          return;
+                        }
+                        console.log(
+                          "Столбец target_date успешно добавлен в таблицу notifications"
+                        );
+                        resolveColumn();
+                      }
+                    );
+                  })
+                );
+              }
+
+              // Ожидаем завершения всех операций
+              if (promises.length > 0) {
+                Promise.all(promises)
+                  .then(() => {
+                    db.close();
+                    resolve();
+                  })
+                  .catch((err) => {
+                    db.close();
+                    reject(err);
+                  });
+              } else {
+                console.log(
+                  "Все необходимые столбцы уже существуют в таблице notifications"
+                );
+                db.close();
+                resolve();
+              }
+            });
+          }
+        );
+      });
+    });
+  });
+};
+
+// Если файла базы данных не существует, создаем его
+if (!fs.existsSync(dbPath)) {
+  console.log(`База данных не найдена. Создаем новую базу данных: ${dbPath}`);
+  fs.writeFileSync(dbPath, "");
+}
+
+// Миграция базы данных перед использованием
+migrateDatabase()
+  .then(() => {
+    console.log("Миграция базы данных завершена успешно.");
+  })
+  .catch((err) => {
+    console.error("Ошибка при миграции базы данных:", err);
+    process.exit(1);
+  });
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error("Ошибка при подключении к базе данных:", err.message);
   } else {
     console.log("Подключение к базе данных SQLite успешно установлено");
-
-    // Создание таблицы для хранения уведомлений
-    db.run(
-      `CREATE TABLE IF NOT EXISTS notifications (
-      id TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      message TEXT NOT NULL,
-      times TEXT NOT NULL,
-      days_left INTEGER,
-      type TEXT NOT NULL DEFAULT 'daily',
-      day_of_month INTEGER,
-      months_left INTEGER,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`,
-      (err) => {
-        if (err) {
-          console.error("Ошибка при создании таблицы:", err.message);
-        } else {
-          console.log("Таблица уведомлений создана или уже существует");
-        }
-      }
-    );
   }
 });
 
 // Добавить новое ежедневное уведомление
-const addNotification = (id, userId, message, times, daysLeft) => {
+const addNotification = (
+  id,
+  userId,
+  message,
+  times,
+  daysLeft,
+  daysOfWeek = [],
+  targetDate = null
+) => {
   return new Promise((resolve, reject) => {
     const stmt = db.prepare(`
-      INSERT INTO notifications (id, user_id, message, times, days_left, type) 
-      VALUES (?, ?, ?, ?, ?, 'daily')
+      INSERT INTO notifications (id, user_id, message, times, days_left, days_of_week, target_date, type) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'daily')
     `);
 
     stmt.run(
@@ -48,41 +194,8 @@ const addNotification = (id, userId, message, times, daysLeft) => {
       message,
       JSON.stringify(times),
       daysLeft,
-      function (err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ id, userId, message, times, daysLeft, type: "daily" });
-        }
-      }
-    );
-
-    stmt.finalize();
-  });
-};
-
-// Добавить новое ежемесячное уведомление
-const addMonthlyNotification = (
-  id,
-  userId,
-  message,
-  times,
-  monthsLeft,
-  dayOfMonth
-) => {
-  return new Promise((resolve, reject) => {
-    const stmt = db.prepare(`
-      INSERT INTO notifications (id, user_id, message, times, months_left, day_of_month, type) 
-      VALUES (?, ?, ?, ?, ?, ?, 'monthly')
-    `);
-
-    stmt.run(
-      id,
-      userId,
-      message,
-      JSON.stringify(times),
-      monthsLeft,
-      dayOfMonth,
+      JSON.stringify(daysOfWeek),
+      targetDate,
       function (err) {
         if (err) {
           reject(err);
@@ -92,9 +205,10 @@ const addMonthlyNotification = (
             userId,
             message,
             times,
-            monthsLeft,
-            dayOfMonth,
-            type: "monthly",
+            daysLeft,
+            daysOfWeek,
+            targetDate,
+            type: "daily",
           });
         }
       }
@@ -115,12 +229,30 @@ const getAllNotifications = () => {
         if (err) {
           reject(err);
         } else {
-          resolve(
-            rows.map((row) => ({
+          const result = rows.map((row) => {
+            const notification = {
               ...row,
               times: JSON.parse(row.times),
-            }))
-          );
+            };
+
+            // Проверка и добавление пустого массива, если нет days_of_week
+            if (
+              !row.hasOwnProperty("days_of_week") ||
+              row.days_of_week === null
+            ) {
+              notification.days_of_week = [];
+            } else {
+              try {
+                notification.days_of_week = JSON.parse(row.days_of_week);
+              } catch (e) {
+                notification.days_of_week = [];
+              }
+            }
+
+            return notification;
+          });
+
+          resolve(result);
         }
       }
     );
@@ -136,33 +268,30 @@ const getAllDailyNotifications = () => {
         if (err) {
           reject(err);
         } else {
-          resolve(
-            rows.map((row) => ({
+          const result = rows.map((row) => {
+            const notification = {
               ...row,
               times: JSON.parse(row.times),
-            }))
-          );
-        }
-      }
-    );
-  });
-};
+            };
 
-// Получить все активные ежемесячные уведомления
-const getAllMonthlyNotifications = () => {
-  return new Promise((resolve, reject) => {
-    db.all(
-      `SELECT * FROM notifications WHERE type = 'monthly' AND months_left > 0`,
-      (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(
-            rows.map((row) => ({
-              ...row,
-              times: JSON.parse(row.times),
-            }))
-          );
+            // Проверка и добавление пустого массива, если нет days_of_week
+            if (
+              !row.hasOwnProperty("days_of_week") ||
+              row.days_of_week === null
+            ) {
+              notification.days_of_week = [];
+            } else {
+              try {
+                notification.days_of_week = JSON.parse(row.days_of_week);
+              } catch (e) {
+                notification.days_of_week = [];
+              }
+            }
+
+            return notification;
+          });
+
+          resolve(result);
         }
       }
     );
@@ -181,12 +310,30 @@ const getUserNotifications = (userId) => {
         if (err) {
           reject(err);
         } else {
-          resolve(
-            rows.map((row) => ({
+          const result = rows.map((row) => {
+            const notification = {
               ...row,
               times: JSON.parse(row.times),
-            }))
-          );
+            };
+
+            // Проверка и добавление пустого массива, если нет days_of_week
+            if (
+              !row.hasOwnProperty("days_of_week") ||
+              row.days_of_week === null
+            ) {
+              notification.days_of_week = [];
+            } else {
+              try {
+                notification.days_of_week = JSON.parse(row.days_of_week);
+              } catch (e) {
+                notification.days_of_week = [];
+              }
+            }
+
+            return notification;
+          });
+
+          resolve(result);
         }
       }
     );
@@ -211,7 +358,7 @@ const decrementDaysLeft = () => {
   return new Promise((resolve, reject) => {
     db.run(
       `UPDATE notifications SET days_left = days_left - 1 
-       WHERE type = 'daily' AND days_left > 0`,
+       WHERE type = 'daily' AND days_left > 0 AND (days_of_week IS NULL OR days_of_week = '[]')`,
       function (err) {
         if (err) {
           reject(err);
@@ -248,13 +395,13 @@ const decrementMonthsLeft = (processedIds) => {
   });
 };
 
-// Удалить уведомления с нулевым количеством оставшихся дней/месяцев
+// Очистка истекших уведомлений
 const cleanupExpiredNotifications = () => {
   return new Promise((resolve, reject) => {
     db.run(
-      `DELETE FROM notifications WHERE 
-       (type = 'daily' AND days_left <= 0) OR 
-       (type = 'monthly' AND months_left <= 0)`,
+      `DELETE FROM notifications 
+       WHERE (type = 'daily' AND days_left <= 0 AND (days_of_week IS NULL OR days_of_week = '[]')) 
+       OR (type = 'monthly' AND months_left <= 0)`,
       function (err) {
         if (err) {
           reject(err);
@@ -269,10 +416,8 @@ const cleanupExpiredNotifications = () => {
 module.exports = {
   db,
   addNotification,
-  addMonthlyNotification,
   getAllNotifications,
   getAllDailyNotifications,
-  getAllMonthlyNotifications,
   getUserNotifications,
   deleteNotification,
   decrementDaysLeft,
