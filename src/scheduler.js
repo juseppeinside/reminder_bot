@@ -1,13 +1,10 @@
 const cron = require("node-cron");
 const {
   getAllNotifications,
-  getAllDailyNotifications,
-  getAllMonthlyNotifications,
   decrementDaysLeft,
   decrementMonthsLeft,
   cleanupExpiredNotifications,
   deleteNotification,
-  getUserNotifications,
 } = require("./db");
 const config = require("../config");
 
@@ -27,6 +24,12 @@ const initScheduler = (bot) => {
 
       // Текущий день месяца
       const currentDayOfMonth = moscowTime.getUTCDate();
+
+      // Текущий день недели (0 - воскресенье, 1 - понедельник, и т.д.)
+      const currentDayOfWeek = moscowTime.getUTCDay();
+
+      // Текущая дата в формате YYYY-MM-DD
+      const currentDate = moscowTime.toISOString().split("T")[0];
 
       // Получаем все активные уведомления
       const notifications = await getAllNotifications();
@@ -48,6 +51,25 @@ const initScheduler = (bot) => {
           if (time === currentTime) {
             // Для ежедневных уведомлений
             if (notification.type === "daily") {
+              // Проверяем, если у уведомления задана конкретная дата
+              if (notification.target_date) {
+                // Если дата уведомления не соответствует текущей дате, пропускаем
+                if (notification.target_date !== currentDate) {
+                  continue;
+                }
+              }
+              // Проверяем, если у уведомления заданы дни недели
+              else if (
+                notification.days_of_week &&
+                notification.days_of_week.length > 0
+              ) {
+                // Проверяем, является ли текущий день одним из дней для отправки
+                if (!notification.days_of_week.includes(currentDayOfWeek)) {
+                  // Если текущий день не входит в список дней для отправки, пропускаем
+                  continue;
+                }
+              }
+
               try {
                 await bot.sendMessage(
                   notification.user_id,
@@ -57,8 +79,25 @@ const initScheduler = (bot) => {
                   `✅ Отправлено ежедневное уведомление: ${notification.id} пользователю ${notification.user_id}`
                 );
 
-                // Если осталось 1 день, добавляем уведомление в список на удаление и запоминаем для уведомления
-                if (notification.days_left === 1) {
+                // Если задана конкретная дата (однократное уведомление), добавляем в список на удаление
+                if (notification.target_date) {
+                  notificationsToDelete.push(notification.id);
+
+                  // Запоминаем уведомление для отправки сообщения о завершении
+                  if (!expiringNotifications[notification.user_id]) {
+                    expiringNotifications[notification.user_id] = [];
+                  }
+                  expiringNotifications[notification.user_id].push({
+                    message: notification.message,
+                    type: "daily",
+                  });
+                }
+                // Если осталось 1 день и нет дней недели, добавляем уведомление в список на удаление
+                else if (
+                  notification.days_left === 1 &&
+                  (!notification.days_of_week ||
+                    notification.days_of_week.length === 0)
+                ) {
                   notificationsToDelete.push(notification.id);
 
                   // Запоминаем уведомление для отправки сообщения о завершении

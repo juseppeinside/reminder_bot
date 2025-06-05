@@ -2,17 +2,28 @@ require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const {
   parseMessage,
-  parseMonthCommand,
   parseDeleteCommand,
+  parseNotificationCommand,
 } = require("./utils");
+const { processUserMessage } = require("./services/botMessageProcessor");
 const {
   addNotification,
-  addMonthlyNotification,
   getUserNotifications,
   deleteNotification,
+  getAllUsers,
 } = require("./db");
 const { initScheduler } = require("./scheduler");
 const config = require("../config");
+const {
+  WELCOME_MESSAGE,
+  HELP_MESSAGE,
+  EMPTY_NOTIFICATIONS_LIST,
+  NOTIFICATION_LIST_ERROR,
+  NOTIFICATION_DELETION_ERROR,
+  INSUFFICIENT_PERMISSIONS,
+  NOTIFICATION_SENT,
+} = require("./constants/botMessages");
+const { formatDateForDisplay, dayNumberToName } = require("./utils/dateTime");
 
 // Инициализация бота
 const bot = new TelegramBot(config.TELEGRAM_BOT_TOKEN, { polling: true });
@@ -28,71 +39,14 @@ initScheduler(bot);
 // Обработка команды /start
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
-  const message = `👋 Привет! Я бот для отправки регулярных уведомлений.
-
-Чтобы создать ежедневное уведомление, отправьте сообщение в одном из форматов:
-
-1. "Текст сообщения" "ЧЧ:ММ,ЧЧ:ММ" КОЛ-ВО_ДНЕЙ
-2. «Текст сообщения» «ЧЧ:ММ,ЧЧ:ММ» КОЛ-ВО_ДНЕЙ
-3. "Текст сообщения" ЧЧ:ММ КОЛ-ВО_ДНЕЙ
-4. «Текст сообщения» ЧЧ:ММ КОЛ-ВО_ДНЕЙ
-
-Вместо КОЛ-ВО_ДНЕЙ можно указать "infinity" для бесконечной отправки. ♾️
-
-Чтобы создать ежемесячное уведомление, отправьте команду /month в одном из форматов:
-
-1. /month "Текст сообщения" "ЧЧ:ММ,ЧЧ:ММ" КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-2. /month «Текст сообщения» «ЧЧ:ММ,ЧЧ:ММ» КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-3. /month "Текст сообщения" ЧЧ:ММ КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-4. /month «Текст сообщения» ЧЧ:ММ КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-
-Где ДЕНЬ_МЕСЯЦА - число от 1 до 28. 📅
-Вместо КОЛ-ВО_МЕСЯЦЕВ можно указать "infinity" для бесконечной отправки.
-
-Примеры:
-🕛 "Выпить воды" "12:00,16:00" 30
-🕓 «Выпить воды» «12:00,16:00» 30
-🕛 "Выпить воды" 12:00 30
-♾️ «Выпить воды» 12:00 infinity
-📆 /month "Оплатить счета" 10:00 12 15
-🎂 /month "Поздравить маму" "10:00,12:00" infinity 3
-
-Для удаления уведомления используйте команду:
-❌ /delete UUID`;
-
-  await bot.sendMessage(chatId, message);
+  await bot.sendMessage(chatId, WELCOME_MESSAGE);
 });
 
 // Обработка команды /help
 bot.onText(/\/help/, async (msg) => {
   const chatId = msg.chat.id;
-  const message = `📚 Форматы создания уведомления:
-
-⏰ Ежедневные уведомления:
-1. "Текст сообщения" "ЧЧ:ММ,ЧЧ:ММ" КОЛ-ВО_ДНЕЙ
-2. «Текст сообщения» «ЧЧ:ММ,ЧЧ:ММ» КОЛ-ВО_ДНЕЙ
-3. "Текст сообщения" ЧЧ:ММ КОЛ-ВО_ДНЕЙ
-4. «Текст сообщения» ЧЧ:ММ КОЛ-ВО_ДНЕЙ
-
-📅 Ежемесячные уведомления:
-1. /month "Текст сообщения" "ЧЧ:ММ,ЧЧ:ММ" КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-2. /month «Текст сообщения» «ЧЧ:ММ,ЧЧ:ММ» КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-3. /month "Текст сообщения" ЧЧ:ММ КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-4. /month «Текст сообщения» ЧЧ:ММ КОЛ-ВО_МЕСЯЦЕВ ДЕНЬ_МЕСЯЦА
-
-Где:
-📝 - Текст сообщения - сообщение, которое вы хотите получать
-🕒 - ЧЧ:ММ - время отправки (можно указать несколько через запятую, если время в кавычках)
-🔢 - КОЛ-ВО_ДНЕЙ/КОЛ-ВО_МЕСЯЦЕВ - количество дней/месяцев или "infinity" для бесконечной отправки
-📆 - ДЕНЬ_МЕСЯЦА - день месяца (1-28), в который нужно отправлять ежемесячное уведомление
-
-Для удаления уведомления:
-❌ /delete UUID
-
-Для просмотра ваших уведомлений:
-📋 /list`;
-
-  await bot.sendMessage(chatId, message);
+  const userId = msg.from.id;
+  await bot.sendMessage(chatId, HELP_MESSAGE.replace("{userId}", userId));
 });
 
 // Обработка команды /list
@@ -103,41 +57,93 @@ bot.onText(/\/list/, async (msg) => {
     const notifications = await getUserNotifications(chatId);
 
     if (notifications.length === 0) {
-      await bot.sendMessage(chatId, "📭 У вас нет активных уведомлений");
+      await bot.sendMessage(chatId, EMPTY_NOTIFICATIONS_LIST);
       return;
     }
 
-    let message = "📋 Ваши активные уведомления:\n\n";
+    // Функция для разделения сообщений на части
+    const splitIntoChunks = (notifications) => {
+      const chunks = [];
+      let currentChunk = [];
+      let currentLength = 0;
+      const maxLength = 3500; // Максимальная длина сообщения Telegram
 
-    for (const notification of notifications) {
-      message += `📝 Сообщение: ${notification.message}\n`;
-      message += `🕒 Время: ${notification.times.join(", ")}\n`;
-      message += `🆔 ID: ${notification.id}\n`;
+      for (const notification of notifications) {
+        // Оцениваем длину текущего уведомления
+        let notificationText = `📝 Сообщение: ${notification.message}\n`;
+        notificationText += `🕒 Время: ${notification.times.join(", ")}\n`;
+        notificationText += `🆔 ID: ${notification.id}\n`;
 
-      if (notification.type === "daily") {
-        message += `📅 Тип: Ежедневное\n`;
-        message += `⏳ Осталось дней: ${
-          notification.days_left === 36500
-            ? "♾️ (бесконечно)"
-            : notification.days_left
-        }\n\n`;
-      } else if (notification.type === "monthly") {
-        message += `🗓️ Тип: Ежемесячное (${notification.day_of_month} число)\n`;
-        message += `⏳ Осталось месяцев: ${
-          notification.months_left === 36500 / 30
-            ? "♾️ (бесконечно)"
-            : notification.months_left
-        }\n\n`;
+        if (notification.type === "daily") {
+          notificationText += `📅 Тип: Ежедневное\n`;
+
+          // Если есть дни недели, добавляем их
+          if (
+            notification.days_of_week &&
+            notification.days_of_week.length > 0
+          ) {
+            const daysText = notification.days_of_week
+              .map((day) => dayNumberToName(day))
+              .join(", ");
+
+            notificationText += `📆 Дни недели: ${daysText}\n`;
+          } else {
+            notificationText += `⏳ Осталось дней: ${
+              notification.days_left === 36500
+                ? "♾️ (бесконечно)"
+                : notification.days_left
+            }\n`;
+          }
+
+          notificationText += "\n";
+        } else if (notification.type === "monthly") {
+          notificationText += `🗓️ Тип: Ежемесячное (${notification.day_of_month} число)\n`;
+          notificationText += `⏳ Осталось месяцев: ${
+            notification.months_left === 36500 / 30
+              ? "♾️ (бесконечно)"
+              : notification.months_left
+          }\n\n`;
+        }
+
+        // Проверяем, превысит ли добавление текущего уведомления максимальную длину
+        if (currentLength + notificationText.length > maxLength) {
+          // Если да, начинаем новый чанк
+          chunks.push(currentChunk);
+          currentChunk = [notificationText];
+          currentLength = notificationText.length;
+        } else {
+          // Если нет, добавляем к текущему чанку
+          currentChunk.push(notificationText);
+          currentLength += notificationText.length;
+        }
       }
-    }
 
-    await bot.sendMessage(chatId, message);
+      // Добавляем последний чанк, если он не пустой
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+      }
+
+      return chunks;
+    };
+
+    // Разбиваем уведомления на части
+    const chunks = splitIntoChunks(notifications);
+
+    // Отправляем каждую часть как отдельное сообщение
+    for (let i = 0; i < chunks.length; i++) {
+      const messageHeader =
+        i === 0
+          ? `📋 Ваши активные уведомления (часть ${i + 1}/${
+              chunks.length
+            }):\n\n`
+          : `📋 Часть ${i + 1}/${chunks.length}:\n\n`;
+
+      const message = messageHeader + chunks[i].join("");
+      await bot.sendMessage(chatId, message);
+    }
   } catch (err) {
     console.error("Ошибка при получении списка уведомлений:", err);
-    await bot.sendMessage(
-      chatId,
-      "❌ Произошла ошибка при получении списка уведомлений"
-    );
+    await bot.sendMessage(chatId, NOTIFICATION_LIST_ERROR);
   }
 });
 
@@ -166,19 +172,25 @@ bot.onText(/\/delete (.+)/, async (msg, match) => {
     }
   } catch (err) {
     console.error("Ошибка при удалении уведомления:", err);
-    await bot.sendMessage(
-      chatId,
-      "❌ Произошла ошибка при удалении уведомления"
-    );
+    await bot.sendMessage(chatId, NOTIFICATION_DELETION_ERROR);
   }
 });
 
-// Обработка команды для создания ежемесячных уведомлений
-bot.onText(/\/month.*/, async (msg) => {
+// Обработка команды отправки уведомления всем пользователям
+bot.onText(/\/notification (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const text = msg.text;
+  const text = match[0];
 
-  const result = parseMonthCommand(text);
+  // Проверка на права администратора
+  if (
+    config.ADMIN_USER_ID &&
+    chatId.toString() !== config.ADMIN_USER_ID.toString()
+  ) {
+    await bot.sendMessage(chatId, INSUFFICIENT_PERMISSIONS);
+    return;
+  }
+
+  const result = parseNotificationCommand(text);
 
   if (!result.success) {
     await bot.sendMessage(chatId, "❌ " + result.error);
@@ -186,30 +198,76 @@ bot.onText(/\/month.*/, async (msg) => {
   }
 
   try {
-    const { id, message, times, months, dayOfMonth } = result.data;
+    // Получаем список всех пользователей
+    const users = await getAllUsers();
 
-    // Добавляем ежемесячное уведомление в базу данных
-    await addMonthlyNotification(
-      id,
-      chatId,
-      message,
-      times,
-      months,
-      dayOfMonth
-    );
+    // Функция задержки
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    // Отправляем подтверждение
-    await bot.sendMessage(chatId, `✅ Принято`);
-  } catch (err) {
-    console.error("Ошибка при создании ежемесячного уведомления:", err);
+    // Информируем об общем количестве получателей
     await bot.sendMessage(
       chatId,
-      "❌ Произошла ошибка при создании ежемесячного уведомления"
+      `🚀 Начинаю отправку сообщения ${users.length} пользователям...`
+    );
+
+    // Разбиваем пользователей на группы по 10 человек
+    const batchSize = 10;
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < users.length; i += batchSize) {
+      const batch = users.slice(i, i + batchSize);
+
+      // Отправляем сообщения пакетно
+      const sendPromises = batch.map(async (userId) => {
+        try {
+          await bot.sendMessage(userId, result.message);
+          successCount++;
+          return true;
+        } catch (err) {
+          console.error(
+            `Ошибка при отправке уведомления пользователю ${userId}:`,
+            err
+          );
+          errorCount++;
+          return false;
+        }
+      });
+
+      // Ждем завершения отправки текущей группы
+      await Promise.all(sendPromises);
+
+      // Отправляем промежуточный статус для больших списков
+      if (users.length > 20 && (i + batchSize) % 20 === 0) {
+        await bot.sendMessage(
+          chatId,
+          `⏳ Прогресс: ${Math.min(i + batchSize, users.length)}/${
+            users.length
+          } (${successCount} успешно, ${errorCount} с ошибками)`
+        );
+      }
+
+      // Делаем паузу между пакетами, чтобы не превысить лимиты Telegram
+      if (i + batchSize < users.length) {
+        await delay(1000);
+      }
+    }
+
+    // Отправляем итоговый отчет
+    await bot.sendMessage(
+      chatId,
+      `${NOTIFICATION_SENT}\n✅ Успешно отправлено: ${successCount}\n❌ Ошибок: ${errorCount}`
+    );
+  } catch (err) {
+    console.error("Ошибка при отправке уведомления всем пользователям:", err);
+    await bot.sendMessage(
+      chatId,
+      "❌ Произошла ошибка при отправке уведомления"
     );
   }
 });
 
-// Обработка обычных сообщений (создание ежедневных уведомлений)
+// Обработка обычных сообщений (создание уведомлений)
 bot.on("message", async (msg) => {
   // Пропускаем команды
   if (msg.text && msg.text.startsWith("/")) {
@@ -223,26 +281,20 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  const result = parseMessage(text);
-
-  if (!result.success) {
-    await bot.sendMessage(chatId, "❌ " + result.error);
-    return;
-  }
-
   try {
-    const { id, message, times, days } = result.data;
+    // Обрабатываем сообщение пользователя
+    const result = await processUserMessage(text, chatId);
 
-    // Добавляем уведомление в базу данных
-    await addNotification(id, chatId, message, times, days);
-
-    // Отправляем подтверждение
-    await bot.sendMessage(chatId, `✅ Принято`);
-  } catch (err) {
-    console.error("Ошибка при создании уведомления:", err);
+    // Отправляем ответ пользователю
     await bot.sendMessage(
       chatId,
-      "❌ Произошла ошибка при создании уведомления"
+      result.success ? result.message : result.error
+    );
+  } catch (err) {
+    console.error("Ошибка при обработке сообщения:", err);
+    await bot.sendMessage(
+      chatId,
+      "❌ Произошла ошибка при обработке сообщения"
     );
   }
 });
